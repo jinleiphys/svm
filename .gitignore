@@ -15,3 +15,5 @@ obj/
 *.dat
 potrep.dat
 ener.dat
+__pycache__/
+*.pyc
