@@ -119,6 +119,9 @@ module parameters_mod
     !> Determinant of A + A' matrix
     real(dp) :: det_aap(MNBAS)
 
+    !> Precomputed det(A+A')^{-1.5} to avoid repeated power computation
+    real(dp) :: det_aap_inv15(MNBAS)
+
     !---------------------------------------------------------------------------
     ! Permutation and symmetrization data
     !---------------------------------------------------------------------------

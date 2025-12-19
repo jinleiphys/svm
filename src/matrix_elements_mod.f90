@@ -18,11 +18,22 @@
 module matrix_elements_mod
     use constants_mod
     use parameters_mod
-    use linear_algebra_mod, only: vdet, vinv, vtrafo
+    use linear_algebra_mod, only: vdet, vinv, vtrafo, trafo_single
     use potential_mod, only: poten
     implicit none
 
     private
+
+    !---------------------------------------------------------------------------
+    ! Detailed timing for matrix element breakdown
+    !---------------------------------------------------------------------------
+    real(dp), save :: time_vtrafo = 0.0_dp
+    real(dp), save :: time_vinv = 0.0_dp
+    real(dp), save :: time_vdet = 0.0_dp
+    real(dp), save :: time_vove = 0.0_dp
+    real(dp), save :: time_vkin = 0.0_dp
+    real(dp), save :: time_vpot = 0.0_dp
+    real(dp), save :: time_accum = 0.0_dp
 
     !---------------------------------------------------------------------------
     ! Public interface
@@ -31,8 +42,31 @@ module matrix_elements_mod
     public :: vove_mat
     public :: vkin_ene
     public :: vpot_ene
+    public :: print_matrix_elem_timing
 
 contains
+
+    !===========================================================================
+    !> @brief Print detailed timing breakdown for matrix elements
+    !===========================================================================
+    subroutine print_matrix_elem_timing()
+        implicit none
+        real(dp) :: total
+
+        total = time_vtrafo + time_vinv + time_vdet + time_vove + time_vkin + time_vpot + time_accum
+
+        if (total > 0.0_dp) then
+            write(*,'(A)') ''
+            write(*,'(A)') '  Matrix Element Breakdown:'
+            write(*,'(A,F10.3,A,F5.1,A)') '    vtrafo (T^T*A*T): ', time_vtrafo, ' s (', 100.0_dp*time_vtrafo/total, '%)'
+            write(*,'(A,F10.3,A,F5.1,A)') '    vinv (inverse):   ', time_vinv, ' s (', 100.0_dp*time_vinv/total, '%)'
+            write(*,'(A,F10.3,A,F5.1,A)') '    vdet (determinant):', time_vdet, ' s (', 100.0_dp*time_vdet/total, '%)'
+            write(*,'(A,F10.3,A,F5.1,A)') '    vove (overlap):   ', time_vove, ' s (', 100.0_dp*time_vove/total, '%)'
+            write(*,'(A,F10.3,A,F5.1,A)') '    vkin (kinetic):   ', time_vkin, ' s (', 100.0_dp*time_vkin/total, '%)'
+            write(*,'(A,F10.3,A,F5.1,A)') '    vpot (potential): ', time_vpot, ' s (', 100.0_dp*time_vpot/total, '%)'
+            write(*,'(A,F10.3,A,F5.1,A)') '    accumulation:     ', time_accum, ' s (', 100.0_dp*time_accum/total, '%)'
+        end if
+    end subroutine print_matrix_elem_timing
 
     !===========================================================================
     !> @brief Compute matrix elements for a single basis state
@@ -74,15 +108,6 @@ contains
         !-----------------------------------------------------------------------
         do ip = 1, not_perm
 
-            ! Copy basis function parameters
-            do j = 1, np
-                do i = 1, np
-                    do k = 1, nbas_in
-                        ap_temp(k, i, j) = a(k, i, j)
-                    end do
-                end do
-            end do
-
             ! Get transformation matrix for this permutation
             do j = 1, np
                 do i = 1, np
@@ -90,8 +115,9 @@ contains
                 end do
             end do
 
-            ! Transform last basis function by permutation
-            call vtrafo(ap_temp, tr_temp, np, nbas_in)
+            ! Transform only the last basis function by permutation (T^T * A * T)
+            ! Note: Only ap_temp(nbas_in,:,:) is used later, so no need to transform all
+            call trafo_single(a(nbas_in,:,:), tr_temp, np, ap_temp(nbas_in,:,:))
 
             ! Construct A + A' for overlap/determinant calculation
             do j = 1, np
@@ -155,8 +181,9 @@ contains
 
         ! Overlap = 1 / det(A+A')^(3/2)
         ! (Factor of pi^(n/2) absorbed in normalization)
+        ! Use precomputed det^{-1.5}
         do k = 1, nbas_in
-            sum_out(k) = 1.0_dp / det_aap(k)**1.5_dp
+            sum_out(k) = det_aap_inv15(k)
         end do
 
     end subroutine vove_mat
@@ -225,10 +252,10 @@ contains
         end do
 
         !-----------------------------------------------------------------------
-        ! Final result with determinant factor
+        ! Final result with determinant factor (use precomputed det^{-1.5})
         !-----------------------------------------------------------------------
         do n = 1, nbas_in
-            sum_out(n) = (summ(n) + sum_out(n)) / det_aap(n)**1.5_dp
+            sum_out(n) = (summ(n) + sum_out(n)) * det_aap_inv15(n)
         end do
 
     end subroutine vkin_ene
@@ -279,19 +306,11 @@ contains
             if (yy == 0.0_dp) cycle
 
             !-------------------------------------------------------------------
-            ! Compute u = (r_i - r_j)^T * (A+A')^{-1} * (r_i - r_j)
+            ! Compute u = b^T * (A+A')^{-1} * b for all basis functions
             ! This is the effective width parameter for this pair
+            ! Optimized: precompute b(i)*b(j) outer product and vectorize
             !-------------------------------------------------------------------
-            u(1:nbas_in) = 0.0_dp
-            do i = 1, np
-                w1 = b_pair(i, k)
-                do j = 1, np
-                    w = w1 * b_pair(j, k)
-                    do m = 1, nbas_in
-                        u(m) = u(m) + w * aapi(m, i, j)
-                    end do
-                end do
-            end do
+            call compute_u_vectorized(nbas_in, np, k, u)
 
             !-------------------------------------------------------------------
             ! Compute potential integrals
@@ -299,11 +318,11 @@ contains
             call poten(nbas_in, u, p)
 
             !-------------------------------------------------------------------
-            ! Accumulate contributions
+            ! Accumulate contributions (use precomputed det^{-1.5})
             !-------------------------------------------------------------------
             do kk = 0, no
                 do m = 1, nbas_in
-                    www = p(m, kk) / det_aap(m)**1.5_dp * y(kk)
+                    www = p(m, kk) * det_aap_inv15(m) * y(kk)
                     v(m, kk) = v(m, kk) + www
                 end do
             end do
@@ -311,5 +330,43 @@ contains
         end do  ! End pair loop
 
     end subroutine vpot_ene
+
+    !===========================================================================
+    !> @brief Vectorized computation of u = b^T * (A+A')^{-1} * b
+    !>
+    !> Computes the quadratic form for all basis functions simultaneously.
+    !> This is more cache-efficient than the nested loop version.
+    !>
+    !> @param[in]  nbas_in  Number of basis functions
+    !> @param[in]  np       Dimension of the matrix
+    !> @param[in]  k_pair   Pair index
+    !> @param[out] u        Result array
+    !===========================================================================
+    subroutine compute_u_vectorized(nbas_in, np, k_pair, u)
+        implicit none
+        integer, intent(in) :: nbas_in, np, k_pair
+        real(dp), intent(out) :: u(MNBAS)
+
+        real(dp) :: bb(MNPAR, MNPAR)  ! Outer product b * b^T
+        integer :: i, j, m
+
+        ! Precompute outer product: bb(i,j) = b_pair(i,k) * b_pair(j,k)
+        do j = 1, np
+            do i = 1, np
+                bb(i, j) = b_pair(i, k_pair) * b_pair(j, k_pair)
+            end do
+        end do
+
+        ! Vectorized sum: u(m) = sum_{i,j} bb(i,j) * aapi(m,i,j)
+        u(1:nbas_in) = 0.0_dp
+        do j = 1, np
+            do i = 1, np
+                do m = 1, nbas_in
+                    u(m) = u(m) + bb(i, j) * aapi(m, i, j)
+                end do
+            end do
+        end do
+
+    end subroutine compute_u_vectorized
 
 end module matrix_elements_mod

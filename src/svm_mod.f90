@@ -33,12 +33,23 @@ module svm_mod
     private
 
     !---------------------------------------------------------------------------
+    ! Timing variables for profiling
+    !---------------------------------------------------------------------------
+    real(dp), save :: time_matrix_elem = 0.0_dp
+    real(dp), save :: time_diagonalize = 0.0_dp
+    real(dp), save :: time_transform = 0.0_dp
+    real(dp), save :: time_cholesky = 0.0_dp
+    integer, save :: call_count_matrix = 0
+    integer, save :: call_count_diag = 0
+
+    !---------------------------------------------------------------------------
     ! Public interface
     !---------------------------------------------------------------------------
     public :: svm_step_by_step
     public :: svm_refinement
     public :: preset_calculation
     public :: exchange_basis
+    public :: print_timing_report
 
 contains
 
@@ -214,6 +225,7 @@ contains
         real(dp) :: z((MNPAR*(MNPAR+1))/2)
         real(dp) :: at(MNPAR, MNPAR)
         real(dp) :: xns, ener, esel, zzs, xxx, yyy, ph, www
+        real(dp) :: t1, t2  ! Timing variables
         integer :: mm, kk, k, i, j, ierr
 
         ! Store current values for restoration
@@ -253,10 +265,16 @@ contains
                     z(kk) = 1.0_dp / (bmin + bmax * xxx / xmr(kk))**2
 
                     ! Transform to Jacobi representation
+                    call cpu_time(t1)
                     call trcorr(z, at)
+                    call cpu_time(t2)
+                    time_transform = time_transform + (t2 - t1)
 
                     ! Check positive definiteness
+                    call cpu_time(t1)
                     call choldc(at, ierr)
+                    call cpu_time(t2)
+                    time_cholesky = time_cholesky + (t2 - t1)
                     if (ierr == 1) goto 555
 
                     ! Store new parameters
@@ -268,7 +286,11 @@ contains
                     end do
 
                     ! Compute matrix elements
+                    call cpu_time(t1)
                     call compute_matrix_element(nbas)
+                    call cpu_time(t2)
+                    time_matrix_elem = time_matrix_elem + (t2 - t1)
+                    call_count_matrix = call_count_matrix + 1
 
                     ! Check for linear dependence
                     ich0 = 1
@@ -283,7 +305,11 @@ contains
                     if (ich0 == 1) return
 
                     ! Get ground state energy
+                    call cpu_time(t1)
                     call diagonalize(ener, nbas, 1)
+                    call cpu_time(t2)
+                    time_diagonalize = time_diagonalize + (t2 - t1)
+                    call_count_diag = call_count_diag + 1
 
                     ! Keep best parameter value
                     if (ener < esel) then
@@ -536,5 +562,50 @@ contains
         xnorm(1:nbas0) = xnc(1:nbas0)
 
     end subroutine exchange_basis
+
+    !===========================================================================
+    !> @brief Print timing report for performance analysis
+    !===========================================================================
+    subroutine print_timing_report()
+        implicit none
+
+        real(dp) :: total_time, pct_matrix, pct_diag, pct_trans, pct_chol
+
+        total_time = time_matrix_elem + time_diagonalize + time_transform + time_cholesky
+
+        if (total_time > 0.0_dp) then
+            pct_matrix = 100.0_dp * time_matrix_elem / total_time
+            pct_diag = 100.0_dp * time_diagonalize / total_time
+            pct_trans = 100.0_dp * time_transform / total_time
+            pct_chol = 100.0_dp * time_cholesky / total_time
+        else
+            pct_matrix = 0.0_dp
+            pct_diag = 0.0_dp
+            pct_trans = 0.0_dp
+            pct_chol = 0.0_dp
+        end if
+
+        write(*, '(A)') ''
+        write(*, '(A)') '=============================================='
+        write(*, '(A)') '  Performance Profile'
+        write(*, '(A)') '=============================================='
+        write(*, '(A,F10.3,A,F6.1,A)') '  Matrix elements:   ', time_matrix_elem, ' s (', pct_matrix, '%)'
+        write(*, '(A,F10.3,A,F6.1,A)') '  Diagonalization:   ', time_diagonalize, ' s (', pct_diag, '%)'
+        write(*, '(A,F10.3,A,F6.1,A)') '  Coord transform:   ', time_transform, ' s (', pct_trans, '%)'
+        write(*, '(A,F10.3,A,F6.1,A)') '  Cholesky decomp:   ', time_cholesky, ' s (', pct_chol, '%)'
+        write(*, '(A)') '----------------------------------------------'
+        write(*, '(A,F10.3,A)') '  Total measured:    ', total_time, ' s'
+        write(*, '(A)') ''
+        write(*, '(A,I10)') '  Matrix elem calls: ', call_count_matrix
+        write(*, '(A,I10)') '  Diagonalize calls: ', call_count_diag
+        if (call_count_matrix > 0) then
+            write(*, '(A,F10.6,A)') '  Avg matrix elem:   ', 1000.0_dp * time_matrix_elem / call_count_matrix, ' ms'
+        end if
+        if (call_count_diag > 0) then
+            write(*, '(A,F10.6,A)') '  Avg diagonalize:   ', 1000.0_dp * time_diagonalize / call_count_diag, ' ms'
+        end if
+        write(*, '(A)') '=============================================='
+
+    end subroutine print_timing_report
 
 end module svm_mod

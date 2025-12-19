@@ -44,6 +44,7 @@ program few_body_system
     use coordinate_transform_mod
     use permutation_mod
     use svm_mod
+    use matrix_elements_mod, only: print_matrix_elem_timing
 
     implicit none
 
@@ -150,6 +151,12 @@ program few_body_system
             stop
 
     end select
+
+    !---------------------------------------------------------------------------
+    ! Print performance profile
+    !---------------------------------------------------------------------------
+    call print_timing_report()
+    call print_matrix_elem_timing()
 
     !---------------------------------------------------------------------------
     ! Print completion message

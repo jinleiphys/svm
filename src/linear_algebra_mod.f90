@@ -31,14 +31,14 @@ module linear_algebra_mod
     public :: ludcmp, lubksb           ! LU decomposition
     public :: choldc                    ! Cholesky decomposition
     public :: vdet, vinv               ! Vectorized determinant/inverse
-    public :: vtrafo, trafo3           ! Matrix transformations
+    public :: vtrafo, trafo3, trafo_single  ! Matrix transformations
     public :: solve_geneig             ! Generalized eigenvalue problem
 
 #ifdef USE_LAPACK
     !---------------------------------------------------------------------------
     ! LAPACK external declarations
     !---------------------------------------------------------------------------
-    external :: dgetrf, dgetrs, dpotrf  ! LU/Cholesky decomposition
+    external :: dgetrf, dgetrs, dgetri, dpotrf  ! LU/Cholesky decomposition/inverse
     external :: dsygv, dsygvx           ! Generalized eigenvalue
     external :: dgemm                    ! Matrix multiplication
 #endif
@@ -343,7 +343,7 @@ contains
     !> @param[in]  nvd  Number of matrices to process
     !===========================================================================
     subroutine vdet(n, nvd)
-        use parameters_mod, only: aap, det_aap
+        use parameters_mod, only: aap, det_aap, det_aap_inv15
         implicit none
         integer, intent(in) :: n, nvd
 
@@ -353,6 +353,7 @@ contains
         if (n == 1) then
             do l = 1, nvd
                 det_aap(l) = aap(l, 1, 1)
+                det_aap_inv15(l) = 1.0_dp / (det_aap(l) * sqrt(det_aap(l)))
             end do
             return
         end if
@@ -383,6 +384,11 @@ contains
             end do
         end do
 
+        ! Precompute det^{-1.5} = 1 / (det * sqrt(det)) to avoid repeated power
+        do l = 1, nvd
+            det_aap_inv15(l) = 1.0_dp / (det_aap(l) * sqrt(det_aap(l)))
+        end do
+
     end subroutine vdet
 
     !===========================================================================
@@ -396,6 +402,7 @@ contains
         implicit none
         integer, intent(in) :: n, nvd
 
+        ! Built-in Gauss-Jordan elimination (faster than LAPACK for small matrices)
         real(dp) :: b_work(MNBAS, MNPAR, 2*MNPAR)
         real(dp) :: x(MNBAS)
         integer :: i, j, k, l, m, j2, iji
@@ -509,6 +516,63 @@ contains
         end do
 
     end subroutine vtrafo
+
+    !===========================================================================
+    !> @brief Single matrix transformation: result = T^T * A * T
+    !>
+    !> Optimized version for transforming a single matrix, using BLAS dgemm
+    !> when available.
+    !>
+    !> @param[in]  a_in    Input matrix (n x n)
+    !> @param[in]  t       Transformation matrix (n x n)
+    !> @param[in]  n       Dimension
+    !> @param[out] a_out   Output matrix (n x n)
+    !===========================================================================
+    subroutine trafo_single(a_in, t, n, a_out)
+        implicit none
+        integer, intent(in) :: n
+        real(dp), intent(in) :: a_in(MNPAR, MNPAR)
+        real(dp), intent(in) :: t(MNPAR, MNPAR)
+        real(dp), intent(out) :: a_out(MNPAR, MNPAR)
+
+#ifdef USE_LAPACK
+        real(dp) :: x(MNPAR, MNPAR)
+        real(dp), parameter :: alpha = 1.0_dp, beta = 0.0_dp
+
+        ! X = A * T using BLAS dgemm
+        call dgemm('N', 'N', n, n, n, alpha, a_in, MNPAR, t, MNPAR, beta, x, MNPAR)
+
+        ! a_out = T^T * X
+        call dgemm('T', 'N', n, n, n, alpha, t, MNPAR, x, MNPAR, beta, a_out, MNPAR)
+#else
+        real(dp) :: x(MNPAR, MNPAR)
+        real(dp) :: sum_val
+        integer :: i, j, k
+
+        ! X = A * T
+        do i = 1, n
+            do j = 1, n
+                sum_val = 0.0_dp
+                do k = 1, n
+                    sum_val = sum_val + a_in(i, k) * t(k, j)
+                end do
+                x(i, j) = sum_val
+            end do
+        end do
+
+        ! a_out = T^T * X
+        do i = 1, n
+            do j = 1, n
+                sum_val = 0.0_dp
+                do k = 1, n
+                    sum_val = sum_val + t(k, i) * x(k, j)
+                end do
+                a_out(i, j) = sum_val
+            end do
+        end do
+#endif
+
+    end subroutine trafo_single
 
     !===========================================================================
     !> @brief Matrix transformation A -> T^T * A * T (single matrix)

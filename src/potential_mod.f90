@@ -32,6 +32,7 @@ module potential_mod
     !---------------------------------------------------------------------------
     public :: init_potential_interpolation
     public :: potval
+    public :: potval_vec
     public :: pot_function
     public :: poten
     public :: qgaus
@@ -284,6 +285,57 @@ contains
     end function potval
 
     !===========================================================================
+    !> @brief Vectorized potential interpolation
+    !>
+    !> Interpolates potential values for multiple parameter values at once.
+    !> This allows better vectorization of log and arithmetic operations.
+    !>
+    !> @param[in]  nbas     Number of values to interpolate
+    !> @param[in]  a_arr    Array of Gaussian parameters
+    !> @param[in]  ip       Operator index
+    !> @param[out] pot_arr  Interpolated potential values
+    !===========================================================================
+    subroutine potval_vec(nbas, a_arr, ip, pot_arr)
+        implicit none
+        integer, intent(in) :: nbas, ip
+        real(dp), intent(in) :: a_arr(MNBAS)
+        real(dp), intent(out) :: pot_arr(MNBAS)
+
+        real(dp) :: da(MNBAS), y1, y2, f1, f2, grid_scale
+        integer :: m, k, k1, k2
+
+        ! Precompute grid scale factor
+        grid_scale = real(nv0, dp) / (xul - xll)
+
+        ! Vectorized log computation
+        do m = 1, nbas
+            da(m) = log(a_arr(m))
+        end do
+
+        ! Vectorized interpolation
+        do m = 1, nbas
+            ! Find grid index
+            k = int((da(m) - xll) * grid_scale)
+            k1 = max(1, min(k + 1, nv0))
+            k2 = max(1, min(k + 2, nv0))
+
+            ! Grid points and values
+            y1 = def_grid(k1)
+            y2 = def_grid(k2)
+            f1 = fff_pot(k1, ip)
+            f2 = fff_pot(k2, ip)
+
+            ! Linear interpolation
+            if (y2 /= y1) then
+                pot_arr(m) = f1 + (f2 - f1) / (y2 - y1) * (da(m) - y1)
+            else
+                pot_arr(m) = f1
+            end if
+        end do
+
+    end subroutine potval_vec
+
+    !===========================================================================
     !> @brief Radial potential function V(r)
     !>
     !> This function defines the two-body interaction potential.
@@ -369,48 +421,53 @@ contains
         real(dp), intent(in) :: u(MNBAS)
         real(dp), intent(out) :: v(MNBAS, 0:4)
 
-        real(dp) :: a_val, p, ppp
+        real(dp) :: a_val, p_scalar, ppp
+        real(dp) :: p_arr(MNBAS)        ! Vectorized p = 0.5/u
+        real(dp) :: scale_arr(MNBAS)    ! Vectorized (2u)^{-1.5}
+        real(dp) :: pot_interp(MNBAS)   ! Vectorized interpolation result
+        real(dp), parameter :: inv_pi15 = 1.0_dp / (PI * sqrt(PI))
         integer :: k, m, nn
+
+        !-----------------------------------------------------------------------
+        ! Precompute p = 0.5/u and scale = (2u)^{-1.5} for vectorization
+        !-----------------------------------------------------------------------
+        do m = 1, nbas_in
+            p_arr(m) = 0.5_dp / u(m)
+            scale_arr(m) = 1.0_dp / (2.0_dp * u(m) * sqrt(2.0_dp * u(m)))
+        end do
 
         !-----------------------------------------------------------------------
         ! Coulomb potential (operator 0)
         !-----------------------------------------------------------------------
-        do m = 1, nbas_in
-            v(m, 0) = 0.0_dp
-        end do
-
         nn = 1  ! r^1 for Coulomb
         do m = 1, nbas_in
-            a_val = u(m)
-            p = 0.5_dp / a_val
-            ppp = potmat(p, 0.0_dp, nn) / (2.0_dp * a_val)**1.5_dp * 4.0_dp / SQRT_PI
-            v(m, 0) = v(m, 0) + ppp
+            ppp = potmat(p_arr(m), 0.0_dp, nn) * scale_arr(m) * 4.0_dp / SQRT_PI
+            v(m, 0) = ppp
         end do
 
         !-----------------------------------------------------------------------
         ! Other operators (1 = Wigner, 2 = Majorana, 3 = Bartlett, 4 = Heisenberg)
         !-----------------------------------------------------------------------
         do k = 1, no
-            do m = 1, nbas_in
-                v(m, k) = 0.0_dp
-            end do
-
             if (ipcon == 1) then
-                ! Interpolation from table
+                ! Vectorized interpolation from table
+                call potval_vec(nbas_in, p_arr, k, pot_interp)
+
+                ! Vectorized scaling
                 do m = 1, nbas_in
-                    a_val = u(m)
-                    p = 0.5_dp / a_val
-                    ppp = potval(p, k) / (2.0_dp * a_val)**1.5_dp / PI**1.5_dp
-                    v(m, k) = ppp
+                    v(m, k) = pot_interp(m) * scale_arr(m) * inv_pi15
                 end do
             else if (ipcon == 2) then
                 ! Analytic form: sum over potential terms
+                do m = 1, nbas_in
+                    v(m, k) = 0.0_dp
+                end do
                 do nn = 1, npt
                     do m = 1, nbas_in
                         a_val = u(m)
-                        p = 0.5_dp / a_val + ap(nn, k)
-                        ppp = potmat(p, bp(nn, k), 2 + np_pot(nn, k)) / &
-                              (2.0_dp * a_val)**1.5_dp * 4.0_dp / SQRT_PI
+                        p_scalar = 0.5_dp / a_val + ap(nn, k)
+                        ppp = potmat(p_scalar, bp(nn, k), 2 + np_pot(nn, k)) * &
+                              scale_arr(m) * 4.0_dp / SQRT_PI
                         v(m, k) = v(m, k) + vp(nn, k) * ppp
                     end do
                 end do
