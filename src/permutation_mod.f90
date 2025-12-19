@@ -141,6 +141,9 @@ contains
         integer :: ip_sign, kp
         integer :: iw, im, ib, ih
 
+        ! Compute number of permutations = N!
+        nper = FACTORIAL(npar)
+
         k = 0
 
         ! Loop over all permutations
@@ -251,16 +254,26 @@ contains
         integer, intent(inout) :: iw
 
         integer :: j, i1, i2
+        logical :: match
 
+        match = .true.
         do j = 1, npar
             i1 = j
             i2 = ia(j)
-            if (isp(i1, is1) - isp(i2, is2) /= 0) return
-            if (iso(i1, ii1) - iso(i2, ii2) /= 0) return
+            if (isp(i1, is1) - isp(i2, is2) /= 0) then
+                match = .false.
+                exit
+            end if
+            if (iso(i1, ii1) - iso(i2, ii2) /= 0) then
+                match = .false.
+                exit
+            end if
         end do
 
-        ww = ww + ccc
-        iw = 1
+        if (match) then
+            ww = ww + ccc
+            iw = 1
+        end if
 
     end subroutine check_wigner
 
@@ -276,6 +289,7 @@ contains
 
         integer :: l, j, m, kp
         integer :: i1, i2, i3, i4, k1, k2
+        logical :: match
 
         kp = 0
         do l = 1, npar
@@ -293,18 +307,25 @@ contains
                 if (iso(i2, ii1) - iso(i3, ii2) /= 0) cycle
 
                 ! Check remaining particles
+                match = .true.
                 do m = 1, npar
                     if (m == l .or. m == j) cycle
                     k1 = m
                     k2 = ia(m)
-                    if (isp(k1, is1) - isp(k2, is2) /= 0) goto 220
-                    if (iso(k1, ii1) - iso(k2, ii2) /= 0) goto 220
+                    if (isp(k1, is1) - isp(k2, is2) /= 0) then
+                        match = .false.
+                        exit
+                    end if
+                    if (iso(k1, ii1) - iso(k2, ii2) /= 0) then
+                        match = .false.
+                        exit
+                    end if
                 end do
 
-                im = 1
-                wm(kp) = wm(kp) + ccc
-
-220             continue
+                if (match) then
+                    im = 1
+                    wm(kp) = wm(kp) + ccc
+                end if
             end do
         end do
 
@@ -322,6 +343,7 @@ contains
 
         integer :: l, j, m, kp
         integer :: i1, i2, i3, i4, k1, k2
+        logical :: match
 
         kp = 0
         do l = 1, npar
@@ -339,18 +361,25 @@ contains
                 if (iso(i2, ii1) - iso(i4, ii2) /= 0) cycle
 
                 ! Check remaining particles
+                match = .true.
                 do m = 1, npar
                     if (m == l .or. m == j) cycle
                     k1 = m
                     k2 = ia(m)
-                    if (isp(k1, is1) - isp(k2, is2) /= 0) goto 320
-                    if (iso(k1, ii1) - iso(k2, ii2) /= 0) goto 320
+                    if (isp(k1, is1) - isp(k2, is2) /= 0) then
+                        match = .false.
+                        exit
+                    end if
+                    if (iso(k1, ii1) - iso(k2, ii2) /= 0) then
+                        match = .false.
+                        exit
+                    end if
                 end do
 
-                ib = 1
-                wb(kp) = wb(kp) + ccc
-
-320             continue
+                if (match) then
+                    ib = 1
+                    wb(kp) = wb(kp) + ccc
+                end if
             end do
         end do
 
@@ -368,6 +397,7 @@ contains
 
         integer :: l, j, m, kp
         integer :: i1, i2, i3, i4, k1, k2
+        logical :: match
 
         kp = 0
         do l = 1, npar
@@ -385,18 +415,25 @@ contains
                 if (iso(i2, ii1) - iso(i3, ii2) /= 0) cycle
 
                 ! Check remaining particles
+                match = .true.
                 do m = 1, npar
                     if (m == l .or. m == j) cycle
                     k1 = m
                     k2 = ia(m)
-                    if (isp(k1, is1) - isp(k2, is2) /= 0) goto 420
-                    if (iso(k1, ii1) - iso(k2, ii2) /= 0) goto 420
+                    if (isp(k1, is1) - isp(k2, is2) /= 0) then
+                        match = .false.
+                        exit
+                    end if
+                    if (iso(k1, ii1) - iso(k2, ii2) /= 0) then
+                        match = .false.
+                        exit
+                    end if
                 end do
 
-                ih = 1
-                wh(kp) = wh(kp) + ccc
-
-420             continue
+                if (match) then
+                    ih = 1
+                    wh(kp) = wh(kp) + ccc
+                end if
             end do
         end do
 
