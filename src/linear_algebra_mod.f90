@@ -30,7 +30,8 @@ module linear_algebra_mod
     !---------------------------------------------------------------------------
     public :: ludcmp, lubksb           ! LU decomposition
     public :: choldc                    ! Cholesky decomposition
-    public :: vdet, vinv               ! Vectorized determinant/inverse
+    public :: vdet, vinv               ! Vectorized determinant/inverse (use module vars)
+    public :: vdet_explicit, vinv_explicit  ! Thread-safe versions with explicit arrays
     public :: vtrafo, trafo3, trafo_single  ! Matrix transformations
     public :: solve_geneig             ! Generalized eigenvalue problem
 
@@ -347,13 +348,33 @@ contains
         implicit none
         integer, intent(in) :: n, nvd
 
+        call vdet_explicit(aap, det_aap, det_aap_inv15, n, nvd)
+
+    end subroutine vdet
+
+    !===========================================================================
+    !> @brief Vectorized determinant with explicit arrays (thread-safe)
+    !>
+    !> @param[inout] aap_inout  Input matrices (modified during computation)
+    !> @param[out]   det_out    Determinant values
+    !> @param[out]   det_inv15  Precomputed det^{-1.5}
+    !> @param[in]    n          Dimension of each matrix
+    !> @param[in]    nvd        Number of matrices to process
+    !===========================================================================
+    subroutine vdet_explicit(aap_inout, det_out, det_inv15, n, nvd)
+        implicit none
+        real(dp), intent(inout) :: aap_inout(MNBAS, MNPAR, MNPAR)
+        real(dp), intent(out) :: det_out(MNBAS)
+        real(dp), intent(out) :: det_inv15(MNBAS)
+        integer, intent(in) :: n, nvd
+
         real(dp) :: d_local(MNBAS)
         integer :: i, j, k, l, ii, n1
 
         if (n == 1) then
             do l = 1, nvd
-                det_aap(l) = aap(l, 1, 1)
-                det_aap_inv15(l) = 1.0_dp / (det_aap(l) * sqrt(det_aap(l)))
+                det_out(l) = aap_inout(l, 1, 1)
+                det_inv15(l) = 1.0_dp / (det_out(l) * sqrt(det_out(l)))
             end do
             return
         end if
@@ -364,11 +385,11 @@ contains
             ii = i + 1
             do k = ii, n
                 do l = 1, nvd
-                    d_local(l) = aap(l, i, k) / aap(l, i, i)
+                    d_local(l) = aap_inout(l, i, k) / aap_inout(l, i, i)
                 end do
                 do j = ii, n
                     do l = 1, nvd
-                        aap(l, j, k) = aap(l, j, k) - aap(l, j, i) * d_local(l)
+                        aap_inout(l, j, k) = aap_inout(l, j, k) - aap_inout(l, j, i) * d_local(l)
                     end do
                 end do
             end do
@@ -376,20 +397,20 @@ contains
 
         ! Product of diagonal
         do l = 1, nvd
-            det_aap(l) = 1.0_dp
+            det_out(l) = 1.0_dp
         end do
         do i = 1, n
             do l = 1, nvd
-                det_aap(l) = det_aap(l) * aap(l, i, i)
+                det_out(l) = det_out(l) * aap_inout(l, i, i)
             end do
         end do
 
         ! Precompute det^{-1.5} = 1 / (det * sqrt(det)) to avoid repeated power
         do l = 1, nvd
-            det_aap_inv15(l) = 1.0_dp / (det_aap(l) * sqrt(det_aap(l)))
+            det_inv15(l) = 1.0_dp / (det_out(l) * sqrt(det_out(l)))
         end do
 
-    end subroutine vdet
+    end subroutine vdet_explicit
 
     !===========================================================================
     !> @brief Vectorized matrix inversion for multiple symmetric matrices
@@ -402,6 +423,24 @@ contains
         implicit none
         integer, intent(in) :: n, nvd
 
+        call vinv_explicit(aap, aapi, n, nvd)
+
+    end subroutine vinv
+
+    !===========================================================================
+    !> @brief Vectorized matrix inversion with explicit arrays (thread-safe)
+    !>
+    !> @param[in]    aap_in   Input matrices to invert
+    !> @param[out]   aapi_out Inverse matrices
+    !> @param[in]    n        Dimension of each matrix
+    !> @param[in]    nvd      Number of matrices to process
+    !===========================================================================
+    subroutine vinv_explicit(aap_in, aapi_out, n, nvd)
+        implicit none
+        real(dp), intent(in) :: aap_in(MNBAS, MNPAR, MNPAR)
+        real(dp), intent(out) :: aapi_out(MNBAS, MNPAR, MNPAR)
+        integer, intent(in) :: n, nvd
+
         ! Built-in Gauss-Jordan elimination (faster than LAPACK for small matrices)
         real(dp) :: b_work(MNBAS, MNPAR, 2*MNPAR)
         real(dp) :: x(MNBAS)
@@ -409,7 +448,7 @@ contains
 
         if (n == 1) then
             do l = 1, nvd
-                aapi(l, 1, 1) = 1.0_dp / aap(l, 1, 1)
+                aapi_out(l, 1, 1) = 1.0_dp / aap_in(l, 1, 1)
             end do
             return
         end if
@@ -435,7 +474,7 @@ contains
         do i = 1, n
             do j = 1, n
                 do l = 1, nvd
-                    b_work(l, j, i) = aap(l, j, i)
+                    b_work(l, j, i) = aap_in(l, j, i)
                 end do
             end do
         end do
@@ -469,12 +508,12 @@ contains
         do j = 1, n
             do i = 1, n
                 do l = 1, nvd
-                    aapi(l, i, j) = b_work(l, i, j + n)
+                    aapi_out(l, i, j) = b_work(l, i, j + n)
                 end do
             end do
         end do
 
-    end subroutine vinv
+    end subroutine vinv_explicit
 
     !===========================================================================
     !> @brief Vectorized matrix transformation A -> T^T * A * T

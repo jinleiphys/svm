@@ -9,7 +9,7 @@
 # Compiler settings
 #-------------------------------------------------------------------------------
 FC = gfortran
-FFLAGS = -O3 -march=native -ffast-math -cpp
+FFLAGS = -O3 -march=native -ffast-math -cpp -fopenmp
 
 # Debug flags (uncomment for debugging)
 # FFLAGS = -g -O0 -Wall -Wextra -fcheck=all -fbacktrace -cpp

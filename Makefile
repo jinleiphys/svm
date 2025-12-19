@@ -15,7 +15,7 @@
 
 # Default values if make.inc not found
 FC ?= gfortran
-FFLAGS ?= -O3 -march=native -ffast-math -cpp
+FFLAGS ?= -O3 -march=native -ffast-math -cpp -fopenmp
 LAPACK_FLAGS ?= -DUSE_LAPACK
 
 # Detect macOS and use Accelerate if LAPACK_LIBS not set
