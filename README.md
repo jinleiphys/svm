@@ -6,6 +6,7 @@
 
 - [简介](#简介)
 - [物理背景](#物理背景)
+- [图形界面 (GUI)](#图形界面-gui)
 - [安装](#安装)
 - [使用方法](#使用方法)
 - [输入文件格式](#输入文件格式)
@@ -70,13 +71,66 @@ $$\phi_i = \mathcal{A} \left[ \exp\left(-\sum_{j<k} A_{jk}^{(i)} (\mathbf{r}_j -
 
 程序求解的哈密顿量形式：
 
-$$H = T + V = -\sum_{i=1}^{N-1} \frac{\hbar^2}{2\mu_i} \nabla_{\xi_i}^2 + \sum_{i<j} V_{ij}(|\mathbf{r}_i - \mathbf{r}_j|)$$
+```math
+H = T + V = -\sum_{i=1}^{N-1} \frac{\hbar^2}{2\mu_i} \nabla_{\xi_i}^2 + \sum_{i<j} V_{ij}(|\mathbf{r}_i - \mathbf{r}_j|)
+```
 
 两体势能支持以下交换算符：
 - **Wigner (W)**：中心力，单位算符
 - **Majorana (M)**：空间交换算符 $P_{ij}^r$
 - **Bartlett (B)**：自旋交换算符 $P_{ij}^\sigma$
 - **Heisenberg (H)**：自旋-同位旋交换算符 $P_{ij}^\sigma P_{ij}^\tau$
+
+---
+
+## 图形界面 (GUI)
+
+本项目提供了用户友好的图形界面，方便配置和运行 SVM 计算。
+
+### GUI 安装
+
+```bash
+# 安装 GUI (需要 Conda)
+./setup_gui.sh
+
+# 或指定环境名
+./setup_gui.sh my_svm_env
+```
+
+### 启动 GUI
+
+```bash
+./run_gui.sh
+```
+
+### GUI 功能
+
+- **向导模式**: 分步骤引导配置粒子、势能和计算参数
+- **预设系统**: 内置常用系统配置（3体、4体、6体等）
+- **实时预览**: 自动生成输入文件并预览
+- **一键运行**: 直接在界面中运行计算并查看输出
+- **中文界面**: 全中文注释和提示
+
+### GUI 截图
+
+```
+┌─────────────────────────────────────────────────┐
+│  SVM Calculator - 少体系统随机变分法              │
+├─────────────────────────────────────────────────┤
+│  [新建] [打开] [保存]  |  [▶ 运行计算] [■ 停止]  │
+├────────────────────┬────────────────────────────┤
+│                    │                            │
+│   向导模式         │      输出日志              │
+│                    │                            │
+│  步骤1: 粒子配置   │  [INFO] 开始SVM计算...     │
+│  步骤2: 势能配置   │  Basis size: 1  E: 5.79    │
+│  步骤3: SVM参数    │  Basis size: 2  E: 4.58    │
+│  步骤4: 预览       │  ...                       │
+│                    │                            │
+│  [生成输入文件]    │  [SUCCESS] 计算完成!       │
+│                    │                            │
+└────────────────────┴────────────────────────────┘
+```
 
 ---
 
@@ -298,7 +352,9 @@ E(3) =   -X.XXXXXXXXXXXX    # 第二激发态能量
 svm/
 ├── Makefile                    # 构建系统
 ├── README.md                   # 本文档
-├── fbs.f                       # 原始 Fortran 77 代码（保留参考）
+├── setup.sh                    # Fortran 编译配置脚本
+├── setup_gui.sh                # GUI 安装脚本
+├── run_gui.sh                  # GUI 启动脚本 (自动生成)
 ├── .gitignore                  # Git 忽略文件
 │
 ├── src/                        # 现代 Fortran 源代码
@@ -315,6 +371,20 @@ svm/
 │   ├── io_mod.f90              # 输入输出
 │   ├── svm_mod.f90             # SVM 优化算法
 │   └── main.f90                # 主程序
+│
+├── gui/                        # 图形界面 (PySide6)
+│   ├── main.py                 # GUI 入口
+│   ├── main_window.py          # 主窗口
+│   ├── input_panel.py          # 输入面板
+│   ├── log_widget.py           # 日志组件
+│   ├── runner.py               # 计算运行器
+│   ├── styles.py               # 样式系统
+│   ├── requirements.txt        # Python 依赖
+│   └── wizard_steps/           # 向导步骤
+│       ├── particle_step.py    # 粒子配置
+│       ├── potential_step.py   # 势能配置
+│       ├── svm_step.py         # SVM参数
+│       └── review_step.py      # 预览
 │
 ├── obj/                        # 编译生成的目标文件（自动创建）
 │
