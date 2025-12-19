@@ -1,0 +1,17 @@
+# Compiled files
+*.o
+*.mod
+fbs
+
+# Build directory
+obj/
+
+# Editor backup files
+*~
+*.bak
+*.swp
+
+# Output files
+*.dat
+potrep.dat
+ener.dat
